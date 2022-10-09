@@ -3,18 +3,25 @@ WORKDIR /app
 EXPOSE 80
 EXPOSE 443
 
-FROM mcr.microsoft.com/dotnet/sdk:6.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:6.0 AS dotnet-build
 WORKDIR /src
-COPY ["weatherapp.csproj", "."]
-RUN dotnet restore "./weatherapp.csproj"
-COPY . .
-WORKDIR "/src/."
+COPY . /src
+RUN dotnet restore "weatherapp.csproj"
 RUN dotnet build "weatherapp.csproj" -c Release -o /app/build
 
-FROM build AS publish
+FROM dotnet-build AS dotnet-publish
 RUN dotnet publish "weatherapp.csproj" -c Release -o /app/publish
 
-FROM base AS final
+FROM node AS node-builder
+WORKDIR /node
+COPY ./ClientApp /node
+RUN npm install
+RUN npm build
+
+FROM mcr.microsoft.com/dotnet/aspnet:6.0 AS final
 WORKDIR /app
-COPY --from=publish /app/publish .
-CMD ASPNETCORE_URLS=http://*:$PORT dotnet weatherapp.dll
+EXPOSE 5050
+RUN mkdir /app/wwwroot
+COPY --from=dotnet-publish /app/publish .
+COPY --from=node-builder /node/build ./wwwroot
+ENTRYPOINT ["dotnet", "weatherapp.dll"]
